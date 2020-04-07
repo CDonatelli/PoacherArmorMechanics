@@ -1,0 +1,434 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(readxl)
+library(here) # for getting the working directory
+library(lme4)
+library(tidyverse)
+library(nlme)
+```
+
+This is where I add the ontogeny identifiers "juvenile", "transition", and "adult"
+```{r}
+here()
+
+#Morphology
+PoacherMorph <- read_excel("PoacherArmorDataCMD.xlsx", sheet = "mashed data(kin_morph)")
+  PoacherMorph <- mutate(PoacherMorph, length = length/100)
+  PoacherMorph$bins <- cut(PoacherMorph$length, breaks=c(0,0.06,0.105,0.5), labels=c("juvenile","transition","adult"))
+
+#Kinematics
+PoacherKinematics <- read_csv("PoacherKinematics.csv")
+  PoacherKinematics <- mutate(PoacherKinematics, length = length/1000)
+  PoacherKinematics$bins <- cut(PoacherKinematics$length, breaks=c(0,0.06,0.105,0.5),
+                                labels=c("juvenile","transition","adult"))
+    #Reynolds number stuff
+    density <- 1027
+    viscosity <- 0.00141
+    dWarm <- 1023	
+    viscWarm <- 0.00096
+  PoacherKinematics <- mutate(PoacherKinematics, Re = ((density*speed*length)/viscosity))
+  PoacherKinematics <- mutate(PoacherKinematics, ReWarm = ((dWarm*speed*length)/viscWarm))
+
+#Bending Mechanics
+MTSmerge<- read_csv("PoacherMTSMerge.csv")
+  MTSmerge <- mutate(MTSmerge, length = length/1000)
+  MTSmerge <- mutate(MTSmerge, stress = stress/10^6)
+  MTSmerge <- mutate(MTSmerge, stiffness = stiffness*(1/1000))
+  MTSmerge$bins <- cut(MTSmerge$length, breaks=c(0,0.06,0.105,0.5), labels=c("juvenile","transition","adult"))
+
+#Kinematics + Mechanics
+Mechanics <- merge(PoacherKinematics, MTSmerge,by="indiv")
+
+#Scale Density
+ScaleDensity02 <- read_csv('NewNewScaleData2020_02.csv')
+  ScaleDensity02$bins <- cut(ScaleDensity02$size, breaks=c(0,60,105,500),
+                           labels=c("juvenile","transition","adult"))
+  
+  
+  
+ScaleDensityMeans <- aggregate(ScaleDensity02, list(ScaleDensity02$Individual, ScaleDensity02$size), mean)
+ScaleDensityMeans$bins <- cut(ScaleDensityMeans$size, breaks=c(0,60,105,500),
+                           labels=c("juvenile","transition","adult"))
+
+ScaleDen02 <- ScaleDensity02[ScaleDensity02$Individual != "Avulsa_XL",]
+MeanScaleDen02 <- ScaleDensityMeans[ScaleDensityMeans$Group.1 != "Avulsa_XL",]
+
+```
+
+Morphology stuff
+Calculating average height, width, length, area, and volume of the scales
+```{r}
+PoacherMorph <- mutate(PoacherMorph, R1a = R1w*R1l)
+PoacherMorph <- mutate(PoacherMorph, R2a = R2w*R2l)
+PoacherMorph <- mutate(PoacherMorph, R3a = R3w*R3l)
+PoacherMorph <- mutate(PoacherMorph, R4a = R4w*R4l)
+PoacherMorph <- mutate(PoacherMorph, R5a = R5w*R5l)
+PoacherMorph <- mutate(PoacherMorph, R6a = R6w*R6l)
+PoacherMorph <- mutate(PoacherMorph, R7a = R7w*R7l)
+PoacherMorph <- mutate(PoacherMorph, R8a = R8w*R8l)
+
+PoacherMorph <- mutate(PoacherMorph, R1v = R1a*R1h)
+PoacherMorph <- mutate(PoacherMorph, R2v = R2a*R2h)
+PoacherMorph <- mutate(PoacherMorph, R3v = R3a*R3h)
+PoacherMorph <- mutate(PoacherMorph, R4v = R4a*R4h)
+PoacherMorph <- mutate(PoacherMorph, R5v = R5a*R5h)
+PoacherMorph <- mutate(PoacherMorph, R6v = R6a*R6h)
+PoacherMorph <- mutate(PoacherMorph, R7v = R7a*R7h)
+PoacherMorph <- mutate(PoacherMorph, R8v = R8a*R8h)
+
+PoacherMorph <- mutate(PoacherMorph, MeanL = rowMeans(cbind(R1l, R2l, R3l, R4l, R5l, R6l, R7l, R8l), na.rm = TRUE))
+PoacherMorph <- mutate(PoacherMorph, MeanW = rowMeans(cbind(R1w, R2w, R3w, R4w, R5w, R6w, R7w, R8w), na.rm = TRUE))
+PoacherMorph <- mutate(PoacherMorph, MeanH = rowMeans(cbind(R1h, R2h, R3h, R4h, R5h, R6h, R7h, R8h), na.rm = TRUE))
+PoacherMorph <- mutate(PoacherMorph, MeanA = rowMeans(cbind(R1a, R2a, R3a, R4a, R5a, R6a, R7a, R8a), na.rm = TRUE))
+PoacherMorph <- mutate(PoacherMorph, MeanV = rowMeans(cbind(R1v, R2v, R3v, R4v, R5v, R6v, R7v, R8v), na.rm = TRUE))
+
+PoacherMorph <- mutate(PoacherMorph, sdL = apply(cbind(R1l, R2l, R3l, R4l, R5l, R6l, R7l, R8l), 1, sd, na.rm = TRUE))
+PoacherMorph <- mutate(PoacherMorph, sdW = apply(cbind(R1w, R2w, R3w, R4w, R5w, R6w, R7w, R8w), 1, sd, na.rm = TRUE))
+PoacherMorph <- mutate(PoacherMorph, sdH = apply(cbind(R1h, R2h, R3h, R4h, R5h, R6h, R7h, R8h), 1, sd, na.rm = TRUE))
+PoacherMorph <- mutate(PoacherMorph, sdA = apply(cbind(R1a, R2a, R3a, R4a, R5a, R6a, R7a, R8a), 1, sd, na.rm = TRUE))
+PoacherMorph <- mutate(PoacherMorph, sdV = apply(cbind(R1v, R2v, R3v, R4v, R5v, R6v, R7v, R8v), 1, sd, na.rm = TRUE))
+
+PoacherMorph <- mutate(PoacherMorph, MeanLBL = MeanL/length)
+PoacherMorph <- mutate(PoacherMorph, MeanWBL = MeanW/length)
+PoacherMorph <- mutate(PoacherMorph, MeanHBL = MeanH/length)
+PoacherMorph <- mutate(PoacherMorph, MeanABL = MeanA/length^2)
+PoacherMorph <- mutate(PoacherMorph, MeanVBL = MeanV/length^3)
+PoacherMorph <- mutate(PoacherMorph, MeanAR = MeanW/MeanL)
+```
+
+Scale Density Stuff
+
+scaleDenModel02 Results
+Response: bmd
+          Df  Sum Sq Mean Sq F value Pr(>F)
+bins       2  110.76  55.381  2.2243 0.1183
+scale      5    7.67   1.535  0.0617 0.9973
+Residuals 52 1294.72  24.898   
+
+```{r}
+# scaleDenModel1 <- lm(bmd ~ bins + scale, random = ~1 | Individual, data = ScaleDensity02)
+# anova(scaleDenModel1)
+# 
+scaleDenModel2 <- lm(bmd ~ bins + scale, random = ~1 | Individual, data = ScaleDen02)
+summary(scaleDenModel2)
+
+scaleDenModel3 <- lm(bmd ~ bins, random = ~1 | Group.1, data = ScaleDensityMeans)
+summary(scaleDenModel3)
+
+scaleDenModel4 <- lm(bmd ~ bins, random = ~1 | Group.1, data = MeanScaleDen02)
+anova(scaleDenModel4)
+
+# plot(scaleDenModel)
+# plot(scaleDenModel2)
+
+ggplot(ScaleDensityMeans, aes(x = bins, y = bmd, color = bins))+
+  geom_boxplot()+
+  theme_classic()
+# 
+# ggplot(ScaleDensity, aes(x = log10(size), y = bmd, color = as.factor(Individual)))+
+#   geom_point()+
+#   theme_classic()
+
+ggplot(MeanScaleDen02, aes(x = bins, y = bmd, color = bins))+
+  geom_boxplot()+
+  theme_classic()
+#ggsave("ScaleDensity.eps", width = 15, height = 10, units = "cm")
+
+```
+
+Stiffness Interpolation
+```{r}
+mechSplit <- split(Mechanics, Mechanics$bins.x)
+Juveniles <- mechSplit$juvenile
+Transition <- mechSplit$transition
+Adult <- mechSplit$adult
+
+JuvStiffFun <- approxfun(Juveniles$bendingPts, Juveniles$stiffness, rule = 2, method = "constant")
+TraStiffFun <- approxfun(Transition$bendingPts, Transition$stiffness, rule = 2, method = "constant")
+AduStiffFun <- approxfun(Adult$bendingPts, Adult$stiffness, rule = 2, method = "constant")
+
+morphSplit <- split(PoacherMorph, PoacherMorph$bins)
+JuvMorph <- morphSplit$juvenile
+TraMorph <- morphSplit$transition
+AduMorph <- morphSplit$adult
+
+JuvMorph <- mutate(JuvMorph, stiffInterp = JuvStiffFun(JuvMorph$position))
+TraMorph <- mutate(TraMorph, stiffInterp = TraStiffFun(TraMorph$position))
+AduMorph <- mutate(AduMorph, stiffInterp = AduStiffFun(AduMorph$position))
+
+newPoacherMorph <- rbind(JuvMorph, TraMorph, AduMorph)
+
+# my_cols <- c("deeppink2", "chartreuse2", "deepskyblue1")
+# pairs(newPoacherMorph[,c(2:3,45:46, 48, 55:56)],
+#       col = my_cols[as.factor(newPoacherMorph$bins)])
+
+allStiffFun <- approxfun(Mechanics$length.x, Mechanics$stiffness, rule = 2)
+PoacherMorph <- mutate(PoacherMorph, stiffInterpAll = allStiffFun(PoacherMorph$length))
+
+```
+
+Stiffness Interpolation Plots
+```{r}
+ggplot(newPoacherMorph, aes(x = MeanLBL, y = stiffInterp))+
+  stat_smooth(aes(x = MeanLBL, y = stiffInterp), method = "lm", se = F)+
+  geom_point(aes(color = bins))+  
+  theme_classic()
+
+ggplot(newPoacherMorph, aes(x = MeanWBL, y = stiffInterp))+
+  stat_smooth(aes(x = MeanWBL, y = stiffInterp), method = "lm", se = F)+
+  geom_point(aes(color = bins))+  
+  theme_classic()
+
+ggplot(newPoacherMorph, aes(x = MeanHBL, y = stiffInterp))+
+  stat_smooth(aes(x = MeanHBL, y = stiffInterp), method = "lm", se = F)+
+  geom_point(aes(color = bins))+  
+  theme_classic()
+```
+
+
+
+Looking at individual variables
+- Mechanics supports two groups (Juvenile and Adult)
+- Morphology supports three groups
+- Kinematics --> Juveniles beat their tails faster and generally swim faster (in BL/second)
+- They are less stiff then adults, but the same as "transitional" individuals
+- They tend to have shorder and wider plates at their tails then adults (which could increase flexiblilty)
+
+
+Kinematics Figures
+```{r}
+ #fits <- lmList(bendingPts ~ stiffness | indiv, data=MTSmerge)
+ #fits <- lmList(bendingPts ~ stress | indiv, data=MTSmerge)
+ 
+ggplot(PoacherKinematics)+
+  stat_smooth(aes(x = length, y = amplitude/length), method = "lm", se = F)+
+  geom_point(aes(x = length, y = amplitude/length, color = bins))+  
+  geom_smooth(aes(x = length, y = amplitude/length, color = bins), method=lm, se=FALSE)+
+  theme_minimal()
+#ggsave("SLvAMP.eps", width = 10, height = 5, units = "cm")
+
+ ggplot(PoacherKinematics)+
+  stat_smooth(aes(x = length, y = speed/length), method = "lm", se = F)+
+  geom_point(aes(x = length, y = speed/length, color = bins))+  
+  geom_smooth(aes(x = length, y = speed/length, color = bins), method=lm, se=FALSE)+
+  theme_minimal()
+#ggsave("SLvSPEED.eps", width = 10, height = 5, units = "cm")
+ 
+ggplot(PoacherKinematics)+
+  stat_smooth(aes(x = length, y = stride/length), method = "lm", se = F)+
+  geom_point(aes(x = length, y = stride/length, color = bins))+ 
+  geom_smooth(aes(x = length, y = stride/length, color = bins), method=lm, se=FALSE)+
+  theme_minimal()
+#ggsave("SLvSTRIDE.eps", width = 10, height = 5, units = "cm")
+  
+ggplot(PoacherKinematics)+
+  stat_smooth(aes(x = length, y = frequency), method = "lm", se = F)+
+  geom_point(aes(x = length, y = frequency, color = bins))+  
+  geom_smooth(aes(x = length, y = frequency, color = bins), method=lm, se=FALSE)+
+  theme_minimal()
+#ggsave("SLvFREQ.eps", width = 10, height = 5, units = "cm")
+```
+
+Morphology Along the Body Figures
+```{r}
+ggplot(PoacherMorph)+
+  geom_errorbar(aes(x = length, y = MeanL, group = bins, color = bins, ymin = MeanL-sdL, ymax = MeanL+sdL), width = 0.01)+
+  geom_point(aes(x = length, y = MeanL, group = bins, color = bins, size = position))+
+  theme_classic()+
+  geom_smooth(aes(x = length, y = MeanL), method = "lm", se = FALSE)
+ggsave("LvsL.eps", width = 15, height = 10, units = "cm")
+
+ggplot(PoacherMorph)+
+  geom_errorbar(aes(x = length, y = MeanW, group = bins, color = bins, ymin = MeanW-sdL, ymax = MeanW+sdL), width = 0.01)+
+  geom_point(aes(x = length, y = MeanW, group = bins, color = bins, size = position))+
+  theme_classic()+
+  geom_smooth(aes(x = length, y = MeanW), method = "lm", se = FALSE)
+ggsave("LvsW.eps", width = 15, height = 10, units = "cm")
+
+ggplot(PoacherMorph)+
+  geom_errorbar(aes(x = length, y = MeanH, group = bins, color = bins, ymin = MeanH-sdL, ymax = MeanH+sdL), width = 0.01)+
+  geom_point(aes(x = length, y = MeanH, group = bins, color = bins, size = position))+
+  theme_classic()+
+  geom_smooth(aes(x = length, y = MeanH), method = "lm", se = FALSE)
+ggsave("LvsH.eps", width = 15, height = 10, units = "cm")
+
+ggplot(PoacherMorph)+
+  geom_errorbar(aes(x = length, y = MeanA, group = bins, color = bins, ymin = MeanA-sdL, ymax = MeanA+sdL), width = 0.01)+
+  geom_point(aes(x = length, y = MeanA, group = bins, color = bins, size = position))+
+  theme_classic()+
+  geom_smooth(aes(x = length, y = MeanA), method = "lm", se = FALSE)
+ggsave("LvsA.eps", width = 15, height = 10, units = "cm")
+
+ggplot(Mechanics, aes(x = length.x, y = stiffness, group = bins.x, color = bins.x))+
+  geom_boxplot()+
+  theme_classic()
+#ggsave("LvsSTIFF.eps", width = 10, height = 5, units = "cm")
+
+```
+
+Tessa's figures for ICVM
+```{r}
+ggplot(PoacherMorph, aes(x = length, y = MeanHBL, color = bins))+
+  geom_point()+ 
+  geom_smooth(method=lm, se=FALSE) + theme(panel.background = element_rect(fill = "black"),
+         plot.background = element_rect(fill="black"),
+         axis.title.x = element_text(colour = "white"),
+         axis.title.y = element_text(colour = "white"),
+         legend.text = element_text(colour = "white"),
+         legend.background = element_rect(fill = "black"))
+
+ggplot(MTSmerge, aes(x = bendingPts, y = stiffness, color = bins))+
+  geom_point()+ 
+  geom_smooth(method=lm, se=FALSE) + theme(panel.background = element_rect(fill = "black"),    plot.background = element_rect(fill="black"),
+         axis.title.x = element_text(colour = "white"),
+         axis.title.y = element_text(colour = "white"),
+         legend.text = element_text(colour = "white"),
+         legend.background = element_rect(fill = "black"))
+```
+
+Linear Stats (Morphology)
+TL;DR - relative length and width don't really change with ontogeny but spine height does
+```{r}
+AreaLM <- lm(MeanABL ~ length, data = PoacherMorph)
+summary(AreaLM)
+
+HeightLM <- lm(MeanHBL ~ length, data = PoacherMorph)
+summary(HeightLM)
+
+LengthLM <- lm(MeanLBL ~ length, data = PoacherMorph)
+summary(LengthLM)
+
+WidthLM <- lm(MeanWBL ~ length, data = PoacherMorph)
+summary(WidthLM)
+```
+
+Linear Stats (Swimming)
+TL;DR - frequency and relative speed change with ontogeny but relative amp and SL do not
+```{r}
+AmpLM <- lm((amplitude/length) ~ length, data = PoacherKinematics)
+summary(AmpLM)
+
+SpeedLM <- lm((speed/length) ~ length, data = PoacherKinematics)
+summary(SpeedLM)
+
+StrideLM <- lm((stride/length) ~ length, data = PoacherKinematics)
+summary(StrideLM)
+
+FreqLM <- lm(frequency ~ length, data = PoacherKinematics)
+summary(FreqLM)
+```
+
+Linear Stats (Mechanics)
+```{r}
+stiffnessLM <- lm(stiffness ~ length, data = MTSmerge)
+summary(stiffnessLM)
+
+ggplot(MTSmerge, aes(x = length, y = stiffness, color = bendingPts))+
+  geom_point()
+```
+
+Scailing Stats (Kinematics)
+```{r}
+require(lmodel2)
+ampRMA <- lmodel2(formula = log(amplitude) ~ log(length), data = PoacherKinematics, nperm = 99)
+ampRMA  
+
+strideRMA <- lmodel2(formula = log(stride) ~ log(length), data = PoacherKinematics, nperm = 99)
+strideRMA 
+
+speedRMA <- lmodel2(formula = log(speed) ~ log(length), data = PoacherKinematics, nperm = 99)
+speedRMA 
+
+freqRMA <- lmodel2(formula = log(frequency) ~ log(length), data = PoacherKinematics, nperm = 99)
+freqRMA 
+```
+
+Reynolds Number Figure
+```{r}
+ggplot(PoacherKinematics, aes(length, Re, color = bins))+
+  geom_point()+
+  geom_hline(yintercept=2300)+
+  geom_hline(yintercept=4000)+
+  theme_classic()
+#ggsave("LvRE.eps", width = 10, height = 5, units = "cm")
+
+# ggplot(PoacherKinematics, aes(length, ReWarm, color = bins))+
+#   geom_point()+
+#   geom_hline(yintercept=1000)+
+#   geom_hline(yintercept=10000)
+```
+
+PCA Stuff
+```{r}
+library(ggfortify)
+library(factoextra)
+library("MASS")
+library("Momocs")
+
+res1.man <- manova(cbind(MeanABL, MeanWBL, MeanHBL, MeanLBL) ~ bins, data = PoacherMorph)
+summary(res1.man)
+summary.aov(res1.man)
+
+res2.man <- manova(cbind(amplitude/length, speed/length, stride/length, frequency) ~ bins, data = PoacherKinematics)
+summary(res2.man)
+summary.aov(res2.man)
+
+res3.man <- manova(cbind(stiffness, stress) ~ bins, data = MTSmerge)
+summary(res3.man)
+summary.aov(res3.man)
+
+morph.pca <- prcomp(PoacherMorph[,c(55:59)], center = TRUE,scale. = TRUE)
+morph.p <- PCA(PoacherMorph[,c(2, 55:59)], center = TRUE, scale. = TRUE)
+morph.lda <- lda(PoacherMorph$bins ~ PoacherMorph$MeanABL + PoacherMorph$MeanVBL + PoacherMorph$MeanLBL +
+                   PoacherMorph$MeanWBL + PoacherMorph$MeanHBL)
+morph.lda.values <- predict(morph.lda)
+ldahist(data = morph.lda.values$x[,1], PoacherMorph$bins)
+
+fviz_pca_biplot(morph.pca, label="var", habillage=PoacherMorph$bins,
+               addEllipses=TRUE, ellipse.level=0.5,col.var = "yellow")+ 
+  labs(x = "PC1", y = "PC2")+
+  theme_classic()
+ggsave("morphPCA.eps", width = 15, height = 10, units = "cm")
+
+kine.pca <- prcomp(PoacherKinematics[,c(5:8,10)], center = TRUE,scale. = TRUE)
+kine.p <- PCA(PoacherKinematics[,c(3, 5:8,10)], center = TRUE, scale. = TRUE)
+kine.lda <- lda(PoacherKinematics$bins ~ + PoacherKinematics$speed + PoacherKinematics$frequency +
+                  PoacherKinematics$stride + PoacherKinematics$amplitude)
+kine.lda.values <- predict(kine.lda)
+ldahist(data = kine.lda.values$x[,1], PoacherKinematics$bins)
+
+fviz_pca_biplot(kine.pca, label="var", habillage=PoacherKinematics$bins,
+               addEllipses=TRUE, ellipse.level=0.5, col.var = "yellow")+
+  labs(x = "PC1", y = "PC2")+
+   theme_classic()
+ggsave("kinePCA.eps", width = 15, height = 10, units = "cm")
+```
+
+Look at all the morphology data
+Conclusions (July)
+1) Everything increases as poacher length increases, but the slopes are different
+2) Position along the body matters (looks pretty linear so we can fit a line to it)
+3) Area and volume increase from tail to head (this looks like it's mostly due to width and height)
+```{r}
+my_cols <- c("deeppink2", "chartreuse2", "deepskyblue1") 
+pairs(PoacherMorph[,c(2,44:48)],
+      col = my_cols[as.factor(PoacherMorph$position)])
+
+pairs(PoacherMorph[,c(2,49:51)],
+      col = my_cols[as.factor(PoacherMorph$position)])
+```
+
+Things to do:
+- Re run stats without the groups (provide evidence for groups)
+- How does naure build a flexible armored tube
+  - how are plates arranged along the body
+  - Do the tiles vary along the body
+  - Do the number of tiles change with ontogeny
+  - How do changes in tiles change the stiffness of the tube
